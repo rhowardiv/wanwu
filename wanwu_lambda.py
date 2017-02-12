@@ -144,6 +144,69 @@ def route_request(path):
         return resource_not_found
 
 
+def select_media_type(accept_header, available_types):
+    """
+    Examine the Accept header and select from available_types
+    https://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html
+    "If an Accept header field is present, and if the server cannot send
+    a response which is acceptable according to the combined Accept
+    field value, then the server SHOULD send a 406 (not acceptable)
+    response."
+    https://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html
+    "HTTP/1.1 servers are allowed to return responses which are
+    not acceptable according to the accept headers sent in the request.
+    In some cases, this may even be preferable to sending a 406
+    response."
+    :arg str accept_header: Contents of Accept header
+    :arg []str available_types: List of available media types
+    :return: One of available types; the first supplied type will be
+    returned if no match is found in the Accept header
+    """
+    for accept_type in accept_types(accept_header):
+        del accept_type
+        # todo: handle wildcards, etc
+    del available_types
+
+
+def accept_types(accept_header):
+    """
+    Turn Accept header into a generator of acceptable types
+    Highest precedence comes first. Examples: "text/html", "text/*",
+    "application/xml", "*/*"
+    """
+    parts = accept_header.split(',')
+    i = 0
+    qs = {}
+    while i < len(parts):
+        q = accept_q(parts[i])
+        if q > 0.99:
+            yield parts.pop(i)
+        else:
+            qs[parts[i]] = q
+            i += 1
+    parts.sort(key=qs.get, reverse=True)
+    for p in parts:
+        yield p
+
+
+def accept_q(accept_part):
+    """
+    The float "q" value for one comma-delimited Accept header part
+    """
+    accept_type, sep, accept_params = [
+        p.strip() for p in accept_part.partition(';')
+    ]
+    del accept_type
+    if not accept_params.startswith('q'):
+        return 1.0
+    literal_q, sep, qvalue_etc = [
+        p.strip() for p in accept_params.partition('=')
+    ]
+    del sep, literal_q
+    q, _, __ = qvalue_etc.partition(';')
+    return float(q)
+
+
 def resource_root(request):
     """ The top level path """
     return Response(
