@@ -80,27 +80,27 @@ def create_lambda(lambda_client, name, role):
         # lambda does not exist -- create it
         with open(package_filename) as package_handle:
             zip_file = package_handle.read()
-        new_lambda = lambda_client.create_function(
+        lambda_client.create_function(
             FunctionName=name,
             Runtime='python2.7',
             Role=role['Arn'],
             Handler='{}.handler'.format(name),
             Code={'ZipFile': zip_file},
         )
-        return new_lambda
-    # check signatures to see if publish is needed
-    local_sig = hashlib.sha256()
-    with open(package_filename) as package_content:
-        local_sig.update(package_content.read())
-    lambda_sig = read_lambda['Configuration']['CodeSha256']
-    if base64.b64encode(local_sig.digest()) == lambda_sig:
-        return read_lambda
-    with open(package_filename) as package_handle:
-        zip_file = package_handle.read()
-    lambda_client.update_function_code(
-        FunctionName=name,
-        ZipFile=zip_file,
-    )
+    else:
+        # check signatures to see if publish is needed
+        local_sig = hashlib.sha256()
+        with open(package_filename) as package_content:
+            local_sig.update(package_content.read())
+        lambda_sig = read_lambda['Configuration']['CodeSha256']
+        if base64.b64encode(local_sig.digest()) == lambda_sig:
+            return read_lambda
+        with open(package_filename) as package_handle:
+            zip_file = package_handle.read()
+        lambda_client.update_function_code(
+            FunctionName=name,
+            ZipFile=zip_file,
+        )
     read_lambda = lambda_client.get_function(FunctionName=name)
     return read_lambda
 
