@@ -4,6 +4,7 @@ Set up the Lambda
 """
 import base64
 import hashlib
+import json
 import os
 import tempfile
 import zipfile
@@ -31,20 +32,20 @@ def create_lambda_ar_role(iam_client, role_name):
     :return: role info dict
     """
     try:
-        return iam_client.create_role(
+        role = iam_client.create_role(
             RoleName=role_name,
             AssumeRolePolicyDocument="""{
                 "Version": "2012-10-17",
                 "Statement": [
                     {
-                    "Effect": "Allow",
-                    "Principal": {
-                        "Service": "lambda.amazonaws.com"
-                    },
-                    "Action": "sts:AssumeRole"
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": "lambda.amazonaws.com"
+                        },
+                        "Action": "sts:AssumeRole"
                     }
                 ]
-                }"""
+            }"""
         )['Role']
     except botocore.exceptions.ClientError as err:
         if 'EntityAlreadyExists' in str(err):
@@ -53,11 +54,26 @@ def create_lambda_ar_role(iam_client, role_name):
             # (EntityAlreadyExists) when calling the CreateRole
             # operation: Role with name wanwu_lambda_role already
             # exists.
-            return iam_client.get_role(
+            role = iam_client.get_role(
                 RoleName=role_name
             )['Role']
         else:
             raise
+    assign_lambda_policy(iam_client, role)
+    return role
+
+
+def assign_lambda_policy(iam_client, role):
+    """
+    Assign extra policy to the lambda IAM role
+    It needs this policy to write CloudWatch logs
+    """
+    policy_arn = ('arn:aws:iam::aws:'
+                  'policy/service-role/AWSLambdaBasicExecutionRole')
+    iam_client.attach_role_policy(
+        RoleName=role['RoleName'],
+        PolicyArn=policy_arn,
+    )
 
 
 def create_lambda(lambda_client, name, role):
@@ -117,4 +133,4 @@ def create_deploy_package(from_file):
 
 
 if __name__ == '__main__':
-    print build_lambda()
+    print json.dumps(build_lambda(), default=str)
