@@ -1,7 +1,30 @@
 """
 Lambda handler for wanwu requests
 """
+
 import json
+from collections import namedtuple
+
+Request = namedtuple(
+    'Request',
+    [
+        'method',  # str 'GET' or 'POST'
+        'path',  # str
+        'body',  # None|str
+        'query',  # dict
+        'headers',  # dict
+    ],
+)
+
+Response = namedtuple(
+    'Response',
+    [
+        'status',  # int
+        'content_type',  # str
+        'headers',  # dict
+        'body',  # str
+    ],
+)
 
 
 def handler(event, context):
@@ -67,21 +90,76 @@ def handler(event, context):
                 "7HjZrYf8BL7N2K1yNbtBkpjPBA=="
         },
         "stageVariables": None
-
     }
     :arg LambdaContext context: see
         http://docs.aws.amazon.com/lambda/latest/dg/python-context-object.html
     """
-    body = json.dumps(dict(
-        event=event,
-        context=context,
-    ), default=str)
+    del context
+    request = request_from_lambda_event(event)
+    resource = route_request(request.path)
+    return response_to_handler_out(resource(request))
+
+
+def request_from_lambda_event(event):
+    """ Build a Request from a lambda handler event """
+    return Request(
+        path=event['path'],
+        method=event['httpMethod'],
+        body=event['body'],
+        query=(
+            dict()
+            if event['queryStringParameters'] is None
+            else event['queryStringParameters']
+        ),
+        headers=event['headers'],
+    )
+
+
+def response_to_handler_out(response):
+    """
+    Build expected handler return from a Response
+    """
     return dict(
-        statusCode=200,
-        body=body,
+        statusCode=response.status,
+        body=response.body,
         headers={
             'Content-Language': 'en',
-            'Content-Length': len(body),
-            'Content-Type': 'application/json; charset=utf-8',
+            'Content-Length': len(response.body),
+            'Content-Type': '{}; charset=utf-8'.format(
+                response.content_type,
+            ),
         },
     )
+
+
+def route_request(path):
+    """
+    Map a path to a resource function
+    :arg str path: eg "/"
+    :return: A function Request -> Response
+    """
+    if path == '/':
+        return resource_root
+    else:
+        return resource_not_found
+
+
+def resource_root(request):
+    """ The top level path """
+    return Response(
+        status=200,
+        content_type='application/json',
+        headers=dict(),
+        body=json.dumps(dict(
+            path=request.path,
+            method=request.method,
+            body=request.body,
+            query=request.query,
+            headers=request.headers,
+        ))
+    )
+
+
+def resource_not_found(request):
+    """ A resource to use when one could not be found """
+    return resource_root(request)._replace(status=404)
