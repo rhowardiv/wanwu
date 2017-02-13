@@ -100,7 +100,7 @@ def create_lambda(lambda_client, name, role):
             FunctionName=name,
             Runtime='python2.7',
             Role=role['Arn'],
-            Handler='{}.handler'.format(name),
+            Handler='{}.lambda_handler'.format(name),
             Code={'ZipFile': zip_file},
         )
     else:

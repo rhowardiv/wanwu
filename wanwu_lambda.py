@@ -27,7 +27,7 @@ Response = namedtuple(
 )
 
 
-def handler(event, context):
+def lambda_handler(event, context):
     """
     The entry point for the lambda
     :arg dict event: {
