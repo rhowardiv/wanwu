@@ -1,27 +1,24 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
-Set up the API Gateway
+Set up the API Gateway as a lambda proxy
+It's referred to as a "proxy" because it does nothing with the incoming
+request, only hands it off to the lambda. This is a special
+configuration of API Gateways that was made available some time after
+the main API Gateway functionality.
 """
-from __future__ import absolute_import
-
 import boto3
 import botocore.exceptions
 
 import build_lambda
 
+_NAME = 'wanwu'
+
 
 def main(client):
     """
     Run through all API Gateway setup steps
-
-    todo:
-
-    - Create prod APIG stage
-    - deploy to prod APIG stage
-
-    For now do this manually...
     """
-    gateway_id = create_gateway(client, 'wanwu')
+    gateway_id = create_gateway(client, _NAME)
     root = resource_by_path(client, gateway_id, '/')
     create_method(client, gateway_id, root['id'], 'GET')
     lamb, lamb_client = build_lambda.build_lambda()
@@ -39,6 +36,15 @@ def main(client):
                        child['id'],
                        'GET',
                        lamb)
+    client.create_deployment(restApiId=gateway_id,
+                             stageName='prod')
+    print(client.update_stage(restApiId=gateway_id,
+                              stageName='prod',
+                              patchOperations=[
+                                  {'op': 'replace',
+                                   'path': r'/*/*/metrics/enabled',
+                                   'value': 'true'}
+                              ]))
 
 
 def create_gateway(client, name):
@@ -66,7 +72,7 @@ def create_gateway(client, name):
 
 def resource_by_path(client, gateway_id, path):
     """
-    Fetch the "/" resource on an API Gateway
+    Fetch the resource at the given path on an API Gateway
     :return: dict resource entry
     """
     limit = 100
@@ -88,6 +94,8 @@ def resource_by_path(client, gateway_id, path):
 def wild_child(client, gateway_id, parent_resource_id):
     """
     The wildcard resource, only child of the root resource
+    This resource must exist (I think) for the proxy to apply to any
+    request paths besides "/".
     """
     try:
         return _new_wild_child(client, gateway_id, parent_resource_id)
@@ -170,22 +178,36 @@ def create_integration(gateway_client,
                                         resource_id,
                                         method,
                                         arn['function_name'])
-    lambda_client.add_permission(
-        FunctionName=arn['function_name'],
-        StatementId=statement_id,
-        Action='lambda:InvokeFunction',
-        Principal='apigateway.amazonaws.com',
-        # might need SourceArn
-        # eg arn:aws:execute-api:us-east-1:aws-acct-id:api-id/*/POST/DynamoDBManager
-        # see http://docs.aws.amazon.com/lambda/latest/dg/with-on-demand-https-example-configure-event-source.html
-    )
+    try:
+        lambda_client.add_permission(
+            FunctionName=arn['function_name'],
+            StatementId=statement_id,
+            Action='lambda:InvokeFunction',
+            Principal='apigateway.amazonaws.com',
+            # might need SourceArn
+            # eg arn:aws:execute-api:us-east-1:aws-acct-id:api-id/*/POST/DynamoDBManager
+            # see
+            # http://docs.aws.amazon.com/lambda/latest/dg/with-on-demand-https-example-configure-event-source.html
+        )
+    except botocore.exceptions.ClientError as err:
+        if 'ConflictException' in str(err):
+            # Expected:
+            # botocore.errorfactory.ResourceConflictException: An error
+            # occurred (ResourceConflictException) when calling the
+            # AddPermission operation: The statement id
+            # (nbjigrc4w0-4ocvc4dgok-POST-halloween_chatbot) provided
+            # already exists. Please provide a new statement id, or
+            # remove the existing statement.
+            pass
+        else:
+            raise
     return integration
 
 
 def lambda_arn_parts(arn):
     """
     Take an ARN and return its labelled parts
-    :arg arn: eg arn:aws:lambda:us-east-1:541056992659:function:wanwu_lambda
+    :arg arn: eg arn:aws:lambda:us-east-1:541056992659:function:my_lamb
     :rtype: dict
     """
     return dict(zip(['"arn"',
